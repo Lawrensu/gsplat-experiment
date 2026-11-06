@@ -1,0 +1,17 @@
+diff --git a/gsplat/cuda/include/Cameras.cuh b/gsplat/cuda/include/Cameras.cuh
+index 1c07f58..193cb06 100644
+--- a/gsplat/cuda/include/Cameras.cuh
++++ b/gsplat/cuda/include/Cameras.cuh
+@@ -779,7 +779,12 @@ struct OrthographicCameraModel
+         }
+ 
+         const auto point = glm::fvec2{ray.x, ray.y} / ray.z;
++        // gsplat Windows patch: MSVC's std::isfinite is a host only template, nvcc rejects it in device code
++#ifdef _MSC_VER
++        if(!isfinite(point.x) || !isfinite(point.y))
++#else
+         if(!std::isfinite(point.x) || !std::isfinite(point.y))
++#endif
+         {
+             return {
+                 glm::fvec2{0.f, 0.f},

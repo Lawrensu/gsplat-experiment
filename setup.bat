@@ -102,7 +102,7 @@ call conda activate gsplat%LAST%
 if errorlevel 1 set "FAILED=Activating conda env gsplat%LAST%" & goto fail
 set "CUDA_HOME=%CONDA_PREFIX%\Library"
 set "CUDA_PATH=%CONDA_PREFIX%\Library"
-set "INCLUDE=%CONDA_PREFIX%\Library\include;%INCLUDE%"
+set "INCLUDE=%CONDA_PREFIX%\Library\include;%CONDA_PREFIX%\Library\include\targets\x64;%INCLUDE%"
 set "LIB=%CONDA_PREFIX%\Library\lib;%CONDA_PREFIX%\Library\lib\x64;%LIB%"
 set "DISTUTILS_USE_SDK=1"
 set "MSSdk=1"

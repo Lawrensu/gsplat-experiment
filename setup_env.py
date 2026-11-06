@@ -138,6 +138,35 @@ def pip_capture(*args, cwd=None, env=None):
     return p.returncode, "".join(lines)
 
 
+LOGS_DIR = Path(__file__).resolve().parent / "logs"
+ERROR_RE = re.compile(
+    r"(error|fatal|failed:|cannot open|no such file|unresolved external|is not recognized)", re.I)
+
+
+def save_failure_log(name, text):
+    """Write the full output to logs/<name>.log and print the lines that name the error.
+
+    pip -v prints thousands of lines and ends with a generic "Failed building wheel",
+    so the compiler message that explains the failure is easy to miss.
+    """
+    LOGS_DIR.mkdir(exist_ok=True)
+    path = LOGS_DIR / f"{name}.log"
+    path.write_text(text, encoding="utf-8", errors="replace")
+    hits, seen = [], set()
+    for line in text.splitlines():
+        s = line.strip()
+        if ERROR_RE.search(s) and s not in seen:
+            seen.add(s)
+            hits.append(s)
+    print()
+    print(f"  Full output saved to {path}")
+    if hits:
+        print("  First lines that mention an error:")
+        for s in hits[:25]:
+            print("   |", s[:300])
+    return path
+
+
 def run_py(code, cwd=None, capture=True):
     """Run code in a fresh interpreter so a broken import cannot kill this script."""
     return subprocess.run(
@@ -391,7 +420,12 @@ def set_build_env():
     prepend_path("PATH", [lib / "bin", lib / "cmd"])
     # conda-forge puts the CUDA headers in Library\include and the .lib files in Library\lib.
     # torch only adds CUDA_HOME\lib\x64 to the linker, so add both through INCLUDE and LIB.
-    prepend_path("INCLUDE", [lib / "include"])
+    # The CCCL headers (cuda/std/..., nv/target) sit in Library\include\targets\x64 on
+    # conda-forge for Windows. nvcc finds them through its own profile, but cl, which compiles
+    # the .cpp files, only sees INCLUDE. CUDA 13 moves them one level down into cccl.
+    prepend_path("INCLUDE", [lib / "include",
+                             lib / "include" / "targets" / "x64",
+                             lib / "include" / "targets" / "x64" / "cccl"])
     prepend_path("LIB", [lib / "lib", lib / "lib" / "x64"])
 
 
@@ -567,7 +601,12 @@ def apply_gsplat_patch(repo, patch_path):
     files = patch_target_files(read_text(patch_path))
     if not files:
         fail(f"no '+++ b/...' lines found in {patch_path}")
-    patch = str(patch_path)
+    # A checkout with core.autocrlf=true turns the patch into CRLF, which no longer matches
+    # the LF files of the clone. Apply an LF copy instead.
+    TOOLS_DIR.mkdir(exist_ok=True)
+    lf_copy = TOOLS_DIR / f"{patch_path.stem}.lf.patch"
+    lf_copy.write_bytes(patch_path.read_bytes().replace(b"\r\n", b"\n"))
+    patch = str(lf_copy)
     if git_run(repo, "apply", "--check", "-R", patch).returncode == 0 \
             and not files_missing_marker(repo, files):
         print("  OK, already done")
@@ -648,6 +687,8 @@ def build_gsplat(v, repo):
     # download a different torch (the Windows PyPI wheel is CPU only) instead of our cu128 one.
     args = ["install", "-e", ".", "--no-build-isolation", "-v"]
     rc, text = pip_capture(*args, cwd=repo, env=dict(os.environ))
+    if rc != 0:
+        log = save_failure_log(f"{repo.name}_build", text)
     if rc != 0 and v["experimental"] and "experimental" in text.lower():
         print()
         print("  The build failed inside gsplat/experimental. 1.6.0 builds that second extension")
@@ -655,8 +696,10 @@ def build_gsplat(v, repo):
         print("  SKIPPED (not used by simple_trainer on COLMAP): gsplat.experimental.render.kernels.csrc")
         print("  Retrying with BUILD_EXPERIMENTAL=0.")
         rc, text = pip_capture(*args, cwd=repo, env=dict(os.environ, BUILD_EXPERIMENTAL="0"))
+        if rc != 0:
+            log = save_failure_log(f"{repo.name}_build_no_experimental", text)
     if rc != 0:
-        fail("pip install -e . failed (see output above). Send the last 60 lines of this window.")
+        fail(f"pip install -e . failed. Send the error lines above, or the whole file {log}")
     if not kernels_built(repo):
         fail("gsplat was installed but no compiled gsplat/csrc module was found in the clone")
 
@@ -709,6 +752,7 @@ def install_examples_requirements(req_path):
     base = ["install", "--no-build-isolation", "--progress-bar", "off"]
     rc, text = pip_capture(*base, "-r", str(req_path), env=dict(os.environ))
     if rc != 0:
+        save_failure_log(f"{Path(req_path).parents[1].name}_examples_requirements", text)
         print()
         print("  pip failed on the requirements file. Last lines of its output:")
         for line in text.strip().splitlines()[-12:]:
@@ -726,7 +770,8 @@ def install_examples_requirements(req_path):
         rc, text = pip_capture(*base, "-r", str(tmp_req), env=dict(os.environ))
         tmp_req.unlink(missing_ok=True)
         if rc != 0:
-            fail("pip install -r failed again even without the skipped entries (see output above).")
+            log = save_failure_log(f"{Path(req_path).parents[1].name}_examples_requirements_filtered", text)
+            fail(f"pip install -r failed again even without the skipped entries. Send the error lines above, or {log}")
     marker.write_text(digest + "\n")
     return True
 
