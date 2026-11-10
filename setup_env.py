@@ -768,7 +768,13 @@ def install_examples_requirements(req_path):
     print("  NOTE: several entries are git+ packages that compile CUDA code (fused-ssim, fused-bilagrid).")
     print("  This takes a while and the window can look stuck. Let it run.")
     base = ["install", "--no-build-isolation", "--progress-bar", "off"]
-    rc, text = pip_capture(*base, "-r", str(req_path), env=dict(os.environ))
+    # torch 2.8 and newer guard a Windows-unsafe branch of torch/csrc/dynamo/compiled_autograd.h
+    # with defined(USE_CUDA), which extensions such as fused-ssim never define, so MSVC stops with
+    # "'std': ambiguous symbol" (pytorch/pytorch#148317). nvcc reads NVCC_APPEND_FLAGS, so tell the
+    # torch headers this is a CUDA build without changing any package.
+    env = dict(os.environ)
+    env["NVCC_APPEND_FLAGS"] = (env.get("NVCC_APPEND_FLAGS", "") + " -DUSE_CUDA=1").strip()
+    rc, text = pip_capture(*base, "-r", str(req_path), env=env)
     if rc != 0:
         save_failure_log(f"{Path(req_path).parents[1].name}_examples_requirements", text)
         print()
@@ -785,7 +791,7 @@ def install_examples_requirements(req_path):
         write_text(tmp_req, new_text)
         for line in dropped:
             print(f"  SKIPPED (not used by simple_trainer on COLMAP): {line}  [{OPTIONAL_REQS[req_name(line)]}]")
-        rc, text = pip_capture(*base, "-r", str(tmp_req), env=dict(os.environ))
+        rc, text = pip_capture(*base, "-r", str(tmp_req), env=env)
         tmp_req.unlink(missing_ok=True)
         if rc != 0:
             log = save_failure_log(f"{Path(req_path).parents[1].name}_examples_requirements_filtered", text)
