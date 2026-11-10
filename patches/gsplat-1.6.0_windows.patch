@@ -26,6 +26,24 @@ index c0574f6..1c9f137 100644
      }
  } // namespace
  
+diff --git a/gsplat/cuda/csrc/SphericalHarmonicsL1PlusCUDA.cu b/gsplat/cuda/csrc/SphericalHarmonicsL1PlusCUDA.cu
+index 50480e8..9ec2c31 100644
+--- a/gsplat/cuda/csrc/SphericalHarmonicsL1PlusCUDA.cu
++++ b/gsplat/cuda/csrc/SphericalHarmonicsL1PlusCUDA.cu
+@@ -704,7 +704,13 @@ __global__ void spherical_harmonics_l1_plus_bwd_kernel(
+         return;
+     }
+ 
++    // gsplat Windows patch: MSVC's std::array<T, 0>::operator[] is host only, and this line is still compiled
++    // for DEGREE 0 (which returned above). One spare element changes nothing at runtime.
++#ifdef _MSC_VER
++    std::array<opmath_t, (MAX_K > 0 ? MAX_K : 1)> acc{};
++#else
+     std::array<opmath_t, MAX_K> acc{};
++#endif
+ 
+     const scalar_t *coeffs_ptr = coeffs + coeff_id * K * D;
+     const uint32_t image_count = packed ? 1 : B * C;
 diff --git a/gsplat/cuda/include/Cameras.cuh b/gsplat/cuda/include/Cameras.cuh
 index 1c07f58..193cb06 100644
 --- a/gsplat/cuda/include/Cameras.cuh
