@@ -1,3 +1,31 @@
+diff --git a/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu b/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu
+index c0574f6..1c9f137 100644
+--- a/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu
++++ b/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu
+@@ -17,6 +17,10 @@
+  */
+ 
+ #include "Config.h"
++// gsplat Windows patch: std::bit_width replaces __builtin_clzll, which MSVC does not have
++#ifdef _MSC_VER
++#include <bit>
++#endif
+ 
+ #if GSPLAT_BUILD_3DGUT
+ 
+@@ -187,7 +191,12 @@ namespace
+         {
+             return 0;
+         }
++        // gsplat Windows patch: MSVC has no __builtin_clzll; std::bit_width(x - 1) gives the same value
++#ifdef _MSC_VER
++        return static_cast<uint32_t>(std::bit_width(x - 1));
++#else
+         return 64u - static_cast<uint32_t>(__builtin_clzll(x - 1));
++#endif
+     }
+ } // namespace
+ 
 diff --git a/gsplat/cuda/include/Cameras.cuh b/gsplat/cuda/include/Cameras.cuh
 index 1c07f58..193cb06 100644
 --- a/gsplat/cuda/include/Cameras.cuh

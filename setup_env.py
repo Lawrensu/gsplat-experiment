@@ -594,6 +594,21 @@ def files_missing_marker(repo, files):
     return missing
 
 
+def restore_patched_files(repo, files):
+    """Undo an older version of the Windows patch, so the current one can be applied.
+
+    Only when every changed tracked file in the clone is one the patch touches: then the
+    changes can only be ours. Anything else (your own edits) stops the setup instead.
+    Returns True when files were restored.
+    """
+    r = git_run(repo, "status", "--porcelain", "--untracked-files=no")
+    changed = {line[3:].strip().strip('"') for line in r.stdout.splitlines() if line.strip()}
+    if not changed or not changed.issubset(set(files)):
+        return False
+    print(f"  an older Windows patch is applied, restoring {len(changed)} file(s) first")
+    return git_run(repo, "checkout", "--", *sorted(changed)).returncode == 0
+
+
 def apply_gsplat_patch(repo, patch_path):
     patch_path = Path(patch_path)
     if not patch_path.is_file():
@@ -612,6 +627,9 @@ def apply_gsplat_patch(repo, patch_path):
         print("  OK, already done")
         return
     r = git_run(repo, "apply", "--check", patch)
+    if r.returncode != 0 and restore_patched_files(repo, files):
+        # An older version of this patch was applied. Its files were restored, try again.
+        r = git_run(repo, "apply", "--check", patch)
     if r.returncode != 0:
         fail(f"the patch does not apply to {repo} (upstream changed, or half applied):\n{r.stderr}")
     r = git_run(repo, "apply", patch)
