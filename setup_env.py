@@ -838,10 +838,64 @@ print('visible', visible, 'alpha mean', float(alpha.mean()), 'grad abs sum', flo
 """
 
 
+PYCOLMAP_MARKER = "# gsplat Windows patch:"
+PYCOLMAP_NOTE = (
+    "# gsplat Windows patch: COLMAP stores counts as 64 bit; native 'L' is 8 bytes on Linux but 4 on\n"
+    "# Windows, so the formats below use 'Q' (8 bytes everywhere). Same values as on Linux.\n"
+)
+
+
+def patch_old_pycolmap():
+    """Fix the binary COLMAP reader of the pycolmap that gsplat 1.5.3 pins (rmbrualla/pycolmap).
+
+    It reads 64 bit counts with struct format 'L' (native unsigned long). That is 8 bytes on
+    Linux and 4 on Windows, so loading cameras.bin fails with "unpack requires a buffer of 4
+    bytes". 'Q' is 8 bytes on every platform. pip owns this file, so it is patched on every
+    run (a reinstall would undo it).
+
+    Returns:
+        True when the file was patched or already patched, False when no such reader exists.
+    """
+    r = run_py(
+        "import importlib.util, os\n"
+        "s = importlib.util.find_spec('pycolmap')\n"
+        "d = list(s.submodule_search_locations)[0] if s and s.submodule_search_locations else ''\n"
+        "print(os.path.join(d, 'scene_manager.py') if d else '')\n",
+        cwd=sys.prefix,
+    )
+    path = Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
+    if path is None or not path.is_file():
+        print("  no rmbrualla pycolmap reader in this env, nothing to patch")
+        return False
+    text = read_text(path)
+    if PYCOLMAP_MARKER in text:
+        print(f"  OK, already done ({path})")
+        return True
+    if "struct.unpack('L'" not in text:
+        print("  this pycolmap does not use the 'L' format, nothing to patch")
+        return False
+    nl = "\r\n" if "\r\n" in text else "\n"
+    text = re.sub(r"(struct\.(?:unpack|pack))\('L'", r"\1('Q'", text).replace("'IiLL'", "'IiQQ'")
+    write_text(path, PYCOLMAP_NOTE.replace("\n", nl) + text)
+    print(f"  patched {path}")
+    return True
+
+
 def verify_checks(key):
     pycolmap_code = "import pycolmap\nprint(getattr(pycolmap, '__version__', 'ok'))"
     if key == "153":
-        pycolmap_code = "import pycolmap\nfrom pycolmap import SceneManager\nprint('SceneManager ok')"
+        # Read the real stump COLMAP files, so the 'L' format problem shows up here, not in training.
+        sparse = (EXP_DIR / "data" / "360_v2" / "stump" / "sparse" / "0").as_posix()
+        pycolmap_code = (
+            "import os\nfrom pycolmap import SceneManager\n"
+            f"p = r'{sparse}'\n"
+            "if not os.path.isdir(p):\n"
+            "    print('SceneManager ok (stump not found, files not read)')\n"
+            "else:\n"
+            "    m = SceneManager(p)\n"
+            "    m.load_cameras(); m.load_images(); m.load_points3D()\n"
+            "    print(f'stump read: {len(m.cameras)} camera, {len(m.images)} images, {len(m.points3D)} points')\n"
+        )
     return [
         ("gsplat compiled module", "import torch\nimport gsplat.csrc as c\nprint(c.__file__)", None),
         ("rasterization forward and backward on CUDA", SMOKE_CODE, None),
@@ -922,6 +976,9 @@ def setup_version(key):
     else:
         print("  torch was swapped by pip, reinstalling the cu128 build")
         install_torch(force=True)
+    if key == "153":
+        print("  pycolmap (rmbrualla, pinned by 1.5.3): 64 bit COLMAP counts on Windows")
+        patch_old_pycolmap()
 
     step(9, total, "Verify")
     failed = run_checks(key, repo)
