@@ -1,4 +1,4 @@
-# Made by setup.bat and run_stump.bat on the lab PC, never committed
+# Made by setup.bat, run_sfm.bat and run_scene.bat on the lab PC, never committed
 gsplat-1.5.3/
 gsplat-1.6.0/
 tools/
@@ -6,4 +6,6 @@ tmp/
 logs/
 results/
 data/360_v2/stump/images_4_png/
+data/*/colmap/
+data/*/realityscan_crashreports/
 __pycache__/

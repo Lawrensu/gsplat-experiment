@@ -7,6 +7,7 @@ This document covers:
 * Setting up the lab PC with one click
 * Running the stump benchmark for both versions
 * Comparing the results
+* Running the Amorphophallus 360 from the frontend
 * Findings so far
 * Deviations from the official gsplat docs
 
@@ -86,6 +87,39 @@ run_stump.bat 160 30k
 
 
 
+## Running Amorphophallus
+
+The input is the 360 the frontend serves, `orbit_front_centre.mp4` from the Taletoreum repo (1280x720, 240 frames). All 240 frames are in `data\amorphophallus\frames`. RealityScan finds the camera poses with the same steps as the Taletoreum pipeline, then gsplat trains with the same official command as stump.
+
+1. Find the camera poses. This writes `data\amorphophallus\colmap` and ends with how many frames got a pose:
+
+```bat
+run_sfm.bat amorphophallus
+```
+
+2. Train each version, one after the other:
+
+```bat
+run_scene.bat 153 7k amorphophallus
+```
+
+```bat
+run_scene.bat 160 7k amorphophallus
+```
+
+3. Compare with `python compare.py`, which lists each scene separately
+
+
+### Notes
+
+* RealityScan is looked for in `C:\Program Files\Epic Games\RealityScan`. If it is installed elsewhere, run `set "RS_DIR=<folder>"` in the same window first
+* AI masks are on, as in Taletoreum. If few frames get a pose, run again without them: `run_sfm.bat amorphophallus --no-masks --force`
+* The footage is AI generated and covers about 238 degrees, not a full circle. The plant faces the camera in every frame while the background turns, so expect RealityScan to align on the background and the plant to come out smeared
+* Training uses `--data_factor 1`, the frames at full size, since they are already 1280x720
+* Note the registered frame count from step 1 along with the usual time, memory and look
+
+
+
 ## Findings
 
 * gsplat 1.5.3 never resets opacity: `gsplat/strategy/default.py:195` reads `step % self.reset_every == 0 & step > 0`, which is always false. 1.6.0 fixes it. Taletoreum's trainer uses 1.5.3 `DefaultStrategy`, so it is affected too
@@ -105,3 +139,4 @@ run_stump.bat 160 30k
 * `NVCC_APPEND_FLAGS=-DUSE_CUDA=1` while installing `examples/requirements.txt`, so fused-ssim compiles against torch 2.9.1 on Windows. Without it, torch's own `compiled_autograd.h` stops MSVC with "'std': ambiguous symbol" (pytorch/pytorch#148317)
 * 1.5.3 only: the pycolmap it pins (rmbrualla/pycolmap) reads COLMAP's 64 bit counts with the struct format `'L'`, which is 8 bytes on Linux but 4 on Windows. The setup changes those formats to `'Q'` in the installed `pycolmap\scene_manager.py`, which gives the same values as on Linux, and its check now reads the stump COLMAP files
 * If `examples/requirements.txt` fails on `nvidia-ncore`, `ppisp` or `fused-bilagrid`, that one line is skipped. None of them are used when training on a COLMAP dataset
+* Amorphophallus only: camera poses come from RealityScan, as in the Taletoreum pipeline, instead of COLMAP, which the official datasets use

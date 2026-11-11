@@ -1,10 +1,11 @@
-"""Compare gsplat stump runs written by run_stump.bat.
+"""Compare gsplat runs written by run_scene.bat (and run_stump.bat).
 
 Usage:
     python compare.py [results_dir]
 
-Reads results/<version>/<length>/stump/stats/*.json, where <version> is 153 (gsplat 1.5.3)
-or 160 (gsplat 1.6.0) and <length> is 7k or 30k. simple_trainer.py writes two kinds of files:
+Reads results/<version>/<length>/<scene>/stats/*.json, where <version> is 153 (gsplat 1.5.3)
+or 160 (gsplat 1.6.0), <length> is 7k or 30k and <scene> is stump, amorphophallus and so on.
+Versions are only compared within the same scene. simple_trainer.py writes two kinds of files:
 
     val_step<N>.json              psnr, ssim, lpips, ellipse_time (render s/image), num_GS
     train_step<N>_rank0.json      mem (peak GiB allocated), ellipse_time (training s), num_GS
@@ -42,11 +43,11 @@ def length_key(length):
 
 
 def collect(results_dir):
-    """Return a list of rows, one per (version, length, step)."""
+    """Return a list of rows, one per (scene, version, length, step)."""
     rows = []
-    for stats_dir in sorted(glob.glob(os.path.join(results_dir, "*", "*", "stump", "stats"))):
+    for stats_dir in sorted(glob.glob(os.path.join(results_dir, "*", "*", "*", "stats"))):
         parts = os.path.normpath(stats_dir).split(os.sep)
-        version, length = parts[-4], parts[-3]
+        version, length, scene = parts[-4], parts[-3], parts[-2]
         steps = {}
         for path in glob.glob(os.path.join(stats_dir, "val_step*.json")):
             m = re.search(r"val_step(\d+)\.json$", path)
@@ -61,6 +62,7 @@ def collect(results_dir):
             train = steps[step].get("train") or {}
             rows.append(
                 {
+                    "scene": scene,
                     "version": version,
                     "length": length,
                     "steps": step + 1,
@@ -72,7 +74,7 @@ def collect(results_dir):
                     "mem": train.get("mem"),
                 }
             )
-    rows.sort(key=lambda r: (r["version"], length_key(r["length"]), r["steps"]))
+    rows.sort(key=lambda r: (r["scene"], r["version"], length_key(r["length"]), r["steps"]))
     return rows
 
 
@@ -83,7 +85,8 @@ def fmt(value, spec, missing="n/a"):
 
 
 def print_table(rows):
-    header = "%-8s %-6s %7s %8s %8s %8s %10s %12s %10s" % (
+    header = "%-15s %-8s %-6s %7s %8s %8s %8s %10s %12s %10s" % (
+        "scene",
         "version",
         "length",
         "steps",
@@ -98,8 +101,9 @@ def print_table(rows):
     print("-" * len(header))
     for r in rows:
         print(
-            "%-8s %-6s %7d %8s %8s %8s %10s %12s %10s"
+            "%-15s %-8s %-6s %7d %8s %8s %8s %10s %12s %10s"
             % (
+                r["scene"],
                 VERSION_NAMES.get(r["version"], r["version"]),
                 r["length"],
                 r["steps"],
@@ -124,12 +128,12 @@ def print_differences(rows):
     if len(versions) < 2:
         return
     base = versions[0]
-    by_key = {(r["version"], r["length"], r["steps"]): r for r in rows}
+    by_key = {(r["scene"], r["version"], r["length"], r["steps"]): r for r in rows}
     lines = []
     for r in rows:
         if r["version"] == base:
             continue
-        b = by_key.get((base, r["length"], r["steps"]))
+        b = by_key.get((r["scene"], base, r["length"], r["steps"]))
         if b is None:
             continue
         parts = []
@@ -143,8 +147,9 @@ def print_differences(rows):
         if r["mem"] is not None and b["mem"] is not None:
             parts.append("mem %s GiB" % format(r["mem"] - b["mem"], "+.2f"))
         lines.append(
-            "%s minus %s, %s, %d steps: %s"
+            "%s: %s minus %s, %s, %d steps: %s"
             % (
+                r["scene"],
                 VERSION_NAMES.get(r["version"], r["version"]),
                 VERSION_NAMES.get(base, base),
                 r["length"],
@@ -165,7 +170,7 @@ if __name__ == "__main__":
     results_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "results")
     rows = collect(results_dir)
     if not rows:
-        print("No stats found under %s" % os.path.join(results_dir, "<version>", "<length>", "stump", "stats"))
+        print("No stats found under %s" % os.path.join(results_dir, "<version>", "<length>", "<scene>", "stats"))
         sys.exit(1)
     print_table(rows)
     print_differences(rows)
