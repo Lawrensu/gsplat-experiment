@@ -9,7 +9,7 @@ rem   153   gsplat 1.5.3, clone gsplat-1.5.3, conda env gsplat153
 rem   160   gsplat 1.6.0, clone gsplat-1.6.0, conda env gsplat160
 rem   7k    adds --max_steps 7000 --save_steps 7000 to the training run (checkpoint at step 7000)
 rem   30k   plain defaults (checkpoints at steps 7000 and 30000, both get evaluated)
-rem Results go to results\<153|160>\<7k|30k>\stump. Run the two versions one after the other,
+rem Results go to results\<153|160>\<7k|30k>\stump, the splat in its ply folder. Run the two versions one after the other,
 rem not at the same time: the first run writes images_4_png into the dataset folder.
 
 set "VER=%~1"
@@ -58,8 +58,10 @@ set COMMON=--disable_viewer --data_factor 4 --render_traj_path ellipse --data_di
 rem ---- 1. Train without eval ----
 echo.
 echo ==== %CLONE% stump %LEN%: training, started %DATE% %TIME% ====
-echo python simple_trainer.py default --eval_steps -1 %COMMON% %EXTRA%
-python simple_trainer.py default --eval_steps -1 %COMMON% %EXTRA%
+rem --save_ply is the trainer's own flag: it adds ply\point_cloud_<step>.ply at steps 7000 and
+rem 30000 (and the last step) for viewing, for example in SuperSplat. Training is unchanged.
+echo python simple_trainer.py default --eval_steps -1 --save_ply %COMMON% %EXTRA%
+python simple_trainer.py default --eval_steps -1 --save_ply %COMMON% %EXTRA%
 if errorlevel 1 set "FAILED=Training" & goto fail
 
 rem ---- 2. Evaluate and render from each checkpoint ----

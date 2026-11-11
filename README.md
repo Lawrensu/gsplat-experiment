@@ -73,7 +73,13 @@ run_stump.bat 160 30k
 ### Notes
 
 * Each run trains with the official `basic.sh` stump command (`--data_factor 4 --disable_viewer --render_traj_path ellipse`), then evaluates every saved checkpoint. `7k` only adds `--max_steps 7000 --save_steps 7000`
-* Results go to `results\<version>\<7k|30k>\stump`, with metrics in `stats\` and renders in `renders\`
+* Results go to `results\<version>\<7k|30k>\stump`, with metrics in `stats\`, renders in `renders\` and the splat in `ply\point_cloud_<step>.ply`
+* `run_stump.bat` adds the trainer's own `--save_ply` flag to the official command, which only writes the `.ply` files and leaves training unchanged. Open them in SuperSplat (https://superspl.at/editor) to check the quality
+* Runs made before `--save_ply` was added have no `.ply`. Export one from the checkpoint with gsplat's own `export_splats`, the same function the flag uses. For 1.5.3 at 7k, from this folder:
+
+```bat
+%USERPROFILE%\AppData\Local\miniconda3\envs\gsplat153\python.exe -c "import torch, os; from gsplat import export_splats; c = torch.load(r'results\153\7k\stump\ckpts\ckpt_6999_rank0.pt', map_location='cpu'); s = c['splats']; os.makedirs(r'results\153\7k\stump\ply', exist_ok=True); export_splats(means=s['means'], scales=s['scales'], quats=s['quats'], opacities=s['opacities'], sh0=s['sh0'], shN=s['shN'], format='ply', save_to=r'results\153\7k\stump\ply\point_cloud_6999.ply'); print('saved', len(s['means']), 'Gaussians')"
+```
 * The first run writes `images_4_png` into the dataset, which gsplat's parser makes because stump's `images_4` files are `.JPG`
 * The first evaluation downloads the LPIPS network weights, so it needs internet
 * Note per run: time, peak GPU memory, and how the result looks
