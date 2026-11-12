@@ -7,5 +7,6 @@ logs/
 results/
 data/360_v2/stump/images_4_png/
 data/*/colmap/
-data/*/realityscan_crashreports/
+data/*/realityscan/
+gpu_log.csv
 __pycache__/

@@ -4,8 +4,9 @@ Usage:
     python compare.py [results_dir]
 
 Reads results/<version>/<length>/<scene>/stats/*.json, where <version> is 153 (gsplat 1.5.3)
-or 160 (gsplat 1.6.0), <length> is 7k or 30k and <scene> is stump, amorphophallus and so on.
-Versions are only compared within the same scene. simple_trainer.py writes two kinds of files:
+or 160 (gsplat 1.6.0), <length> is 7k or 30k with an optional _mcmc and _packed suffix,
+and <scene> is stump, amorphophallus and so on. Versions are only compared within the same
+scene and length. simple_trainer.py writes two kinds of files:
 
     val_step<N>.json              psnr, ssim, lpips, ellipse_time (render s/image), num_GS
     train_step<N>_rank0.json      mem (peak GiB allocated), ellipse_time (training s), num_GS
@@ -36,9 +37,9 @@ def load_json(path):
 
 
 def length_key(length):
-    # 7k before 30k
-    m = re.match(r"(\d+)k$", length)
-    return (int(m.group(1)) if m else 10**9, length)
+    # 7k before 30k, and plain runs before their _mcmc and _packed variants
+    m = re.match(r"(\d+)k(.*)$", length)
+    return (int(m.group(1)), m.group(2)) if m else (10**9, length)
 
 
 
@@ -85,7 +86,7 @@ def fmt(value, spec, missing="n/a"):
 
 
 def print_table(rows):
-    header = "%-15s %-8s %-6s %7s %8s %8s %8s %10s %12s %10s" % (
+    header = "%-15s %-8s %-16s %7s %8s %8s %8s %10s %12s %10s" % (
         "scene",
         "version",
         "length",
@@ -101,7 +102,7 @@ def print_table(rows):
     print("-" * len(header))
     for r in rows:
         print(
-            "%-15s %-8s %-6s %7d %8s %8s %8s %10s %12s %10s"
+            "%-15s %-8s %-16s %7d %8s %8s %8s %10s %12s %10s"
             % (
                 r["scene"],
                 VERSION_NAMES.get(r["version"], r["version"]),

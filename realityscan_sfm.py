@@ -7,10 +7,19 @@ AI masks, align, keep the largest component, export COLMAP text with undistorted
 PNG images. Reads data/<scene>/frames and writes data/<scene>/colmap with
 sparse/0 and images, which is the data_dir for simple_trainer.py.
 
+It also saves the RealityScan project to data/<scene>/realityscan/project.rsproj,
+which opens in the RealityScan app to show every camera and the sparse points, so
+the parts no camera covers can be seen. Saving is one extra step at the end and
+does not change the export.
+
+stump_rs reads stump's own images_4 folder instead of data/stump_rs/frames, so
+stump can be trained on RealityScan poses next to its official COLMAP poses.
+
 Needs only the Python standard library, so any of the gsplat conda envs can run it.
 
 Usage:
     python realityscan_sfm.py amorphophallus
+    python realityscan_sfm.py stump_rs
     python realityscan_sfm.py amorphophallus --no-masks --force
 """
 
@@ -38,10 +47,22 @@ RS_EXE_NAME = "RealityScan.exe"
 DATA_ROOT = Path(__file__).resolve().parent / "data"
 FRAMES_SUBDIR = "frames"
 EXPORT_SUBDIR = "colmap"
-CRASH_SUBDIR = "realityscan_crashreports"
+
+# RealityScan's own files: the saved project (with its data folder) and crash reports
+PROJECT_SUBDIR = "realityscan"
+PROJECT_NAME = "project.rsproj"
+CRASH_SUBDIR = "crashreports"
+
+# Scenes whose frames live somewhere other than data/<scene>/frames
+FRAMES_OVERRIDES = {
+    "stump_rs": DATA_ROOT / "360_v2" / "stump" / "images_4",
+}
 
 # Frame file types RealityScan is given
 FRAME_SUFFIXES = {".jpg", ".jpeg", ".png"}
+
+# How many frames without a pose the check lists by name
+UNREGISTERED_SHOWN = 20
 
 # Watchdog, the same values as Taletoreum: kill RealityScan when it shows no CPU
 # or file activity for STALL_TIMEOUT_SECONDS
@@ -190,9 +211,9 @@ def write_params_xml(export_dir: Path) -> Path:
 
 
 
-def build_command(rs_exe: Path, frames_dir: Path, export_dir: Path, params_xml: Path, crash_dir: Path, masks: bool) -> list[str]:
+def build_command(rs_exe: Path, frames_dir: Path, export_dir: Path, params_xml: Path, crash_dir: Path, project_path: Path, masks: bool) -> list[str]:
     """
-    The RealityScan command line, the same steps as Taletoreum.
+    The RealityScan command line, the same steps as Taletoreum plus -save for the project.
 
     Args:
         rs_exe: path of RealityScan.exe
@@ -200,6 +221,7 @@ def build_command(rs_exe: Path, frames_dir: Path, export_dir: Path, params_xml: 
         export_dir: folder for the COLMAP export
         params_xml: export settings file
         crash_dir: folder for RealityScan crash reports
+        project_path: .rsproj file the aligned project is saved to
         masks: add -generateAIMasks before aligning
 
     Returns:
@@ -211,6 +233,7 @@ def build_command(rs_exe: Path, frames_dir: Path, export_dir: Path, params_xml: 
         "-newScene", "-addFolder", str(frames_dir),
         "-align", "-selectMaximalComponent",
         "-exportRegistration", str(export_dir), str(params_xml),
+        "-save", str(project_path),
         "-quit",
     ]
     if masks:
@@ -279,7 +302,7 @@ def read_colmap_lines(path: Path) -> list[str]:
 
 
 
-def validate_export(export_dir: Path, frame_count: int) -> None:
+def validate_export(export_dir: Path, frames: list[Path]) -> None:
     """
     Check the COLMAP export is complete and print what it holds.
 
@@ -289,7 +312,7 @@ def validate_export(export_dir: Path, frame_count: int) -> None:
 
     Args:
         export_dir: folder with sparse/0 and images
-        frame_count: number of input frames, to report how many were registered
+        frames: input frames, to report which ones got no pose
 
     Returns:
         None. Raises RuntimeError when a file or a registered image is missing
@@ -318,8 +341,16 @@ def validate_export(export_dir: Path, frame_count: int) -> None:
 
     print()
     print(f"Export OK: {export_dir}")
-    print(f"  registered images: {len(names)} of {frame_count} frames")
+    print(f"  registered images: {len(names)} of {len(frames)} frames")
     print(f"  3D points:         {len(points)}")
+
+    # The export renames frames to .png, so compare by name without the extension
+    registered = {Path(n).stem for n in names}
+    unregistered = sorted(p.name for p in frames if p.stem not in registered)
+    if unregistered:
+        shown = ", ".join(unregistered[:UNREGISTERED_SHOWN])
+        more = f" and {len(unregistered) - UNREGISTERED_SHOWN} more" if len(unregistered) > UNREGISTERED_SHOWN else ""
+        print(f"  frames with no pose: {shown}{more}")
 
     # The undistorted export gives each image its own camera with its own crop, so summarise
     models = sorted({cam.split()[1] for cam in cameras})
@@ -340,16 +371,18 @@ def main() -> int:
         process exit code, 0 on success
     """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("scene", help="folder name under data, for example amorphophallus")
+    parser.add_argument("scene", help="folder name under data, for example amorphophallus or stump_rs")
     parser.add_argument("--rs-dir", type=Path, default=Path(os.environ.get("RS_DIR", DEFAULT_RS_DIR)), help="RealityScan install folder")
     parser.add_argument("--no-masks", action="store_true", help="align without -generateAIMasks")
-    parser.add_argument("--force", action="store_true", help="delete an existing export and run again")
+    parser.add_argument("--force", action="store_true", help="delete the existing export and project and run again")
     args = parser.parse_args()
 
     scene_dir = DATA_ROOT / args.scene
-    frames_dir = scene_dir / FRAMES_SUBDIR
+    frames_dir = FRAMES_OVERRIDES.get(args.scene, scene_dir / FRAMES_SUBDIR)
     export_dir = scene_dir / EXPORT_SUBDIR
-    crash_dir = scene_dir / CRASH_SUBDIR
+    project_dir = scene_dir / PROJECT_SUBDIR
+    project_path = project_dir / PROJECT_NAME
+    crash_dir = project_dir / CRASH_SUBDIR
     rs_exe = args.rs_dir / RS_EXE_NAME
 
     if not rs_exe.is_file():
@@ -363,22 +396,30 @@ def main() -> int:
     if export_dir.exists():
         if not args.force:
             print(f"An export already exists at {export_dir}. Checking it. Add --force to run RealityScan again")
-            validate_export(export_dir, len(frames))
+            validate_export(export_dir, frames)
+            print(f"  project:           {project_path if project_path.is_file() else 'not saved'}")
             return 0
         shutil.rmtree(export_dir)
+    if project_dir.exists() and args.force:
+        shutil.rmtree(project_dir)
     export_dir.mkdir(parents=True)
     crash_dir.mkdir(parents=True, exist_ok=True)
 
     params_xml = write_params_xml(export_dir)
-    cmd = build_command(rs_exe, frames_dir, export_dir, params_xml, crash_dir, masks=not args.no_masks)
-    print(f"RealityScan on {len(frames)} frames, AI masks {'off' if args.no_masks else 'on'}")
+    cmd = build_command(rs_exe, frames_dir, export_dir, params_xml, crash_dir, project_path, masks=not args.no_masks)
+    print(f"RealityScan on {len(frames)} frames from {frames_dir}, AI masks {'off' if args.no_masks else 'on'}")
     print(" ".join(f'"{c}"' if " " in c else c for c in cmd))
     print()
     started = time.monotonic()
     run_realityscan(cmd, export_dir)
     print(f"RealityScan finished in {(time.monotonic() - started) / 60:.1f} min")
 
-    validate_export(export_dir, len(frames))
+    validate_export(export_dir, frames)
+    if project_path.is_file():
+        print(f"  project:           {project_path}")
+        print("  Open it in RealityScan to see the cameras and the sparse points")
+    else:
+        print(f"  WARNING: the project was not saved to {project_path}. The export is still fine")
     return 0
 
 
