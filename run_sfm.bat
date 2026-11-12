@@ -5,7 +5,8 @@ cd /d "%~dp0"
 rem Camera poses with RealityScan for one scene: data\<scene>\frames in, data\<scene>\colmap out
 rem (sparse\0 and undistorted images), the same RealityScan steps as the Taletoreum pipeline.
 rem The aligned project is saved to data\<scene>\realityscan\project.rsproj for viewing the cameras.
-rem stump_rs reads data\360_v2\stump\images_4 instead of a frames folder.
+rem stump_rs reads data\360_v2\stump\images_4 and amorphophallus_rs reads data\amorphophallus\frames,
+rem each writing into its own data\<scene> folder.
 rem Usage: run_sfm.bat <scene> [--no-masks] [--force]
 rem   --no-masks   align without RealityScan's AI masks
 rem   --force      delete the existing export and project and run again
@@ -32,7 +33,7 @@ exit /b 0
 
 :usage
 echo Usage: run_sfm.bat ^<scene^> [--no-masks] [--force]
-echo   for example: run_sfm.bat amorphophallus
+echo   for example: run_sfm.bat amorphophallus_rs
 pause
 exit /b 1
 

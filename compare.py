@@ -5,7 +5,7 @@ Usage:
 
 Reads results/<version>/<length>/<scene>/stats/*.json, where <version> is 153 (gsplat 1.5.3)
 or 160 (gsplat 1.6.0), <length> is 7k or 30k with an optional _mcmc and _packed suffix,
-and <scene> is stump, amorphophallus and so on. Versions are only compared within the same
+and <scene> is stump, amorphophallus_rs and so on. Versions are only compared within the same
 scene and length. simple_trainer.py writes two kinds of files:
 
     val_step<N>.json              psnr, ssim, lpips, ellipse_time (render s/image), num_GS

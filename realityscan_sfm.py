@@ -5,7 +5,9 @@ Runs the same RealityScan command and export settings as the Taletoreum pipeline
 (src/terrestrial_decolonization/pipeline/realityscan.py): add the frames, optional
 AI masks, align, keep the largest component, export COLMAP text with undistorted
 PNG images. Reads data/<scene>/frames and writes data/<scene>/colmap with
-sparse/0 and images, which is the data_dir for simple_trainer.py.
+sparse/0 and images, which is the data_dir for simple_trainer.py. The text model is
+also written as cameras.bin, images.bin and points3D.bin, the format of the official
+datasets, because the pycolmap gsplat 1.5.3 pins cannot read COLMAP text on Python 3.
 
 It also saves the RealityScan project to data/<scene>/realityscan/project.rsproj,
 which opens in the RealityScan app to show every camera and the sparse points, so
@@ -14,13 +16,15 @@ does not change the export.
 
 stump_rs reads stump's own images_4 folder instead of data/stump_rs/frames, so
 stump can be trained on RealityScan poses next to its official COLMAP poses.
+amorphophallus_rs works the same way: it reads data/amorphophallus/frames and writes
+into its own data/amorphophallus_rs folder, apart from the frames.
 
 Needs only the Python standard library, so any of the gsplat conda envs can run it.
 
 Usage:
-    python realityscan_sfm.py amorphophallus
+    python realityscan_sfm.py amorphophallus_rs
     python realityscan_sfm.py stump_rs
-    python realityscan_sfm.py amorphophallus --no-masks --force
+    python realityscan_sfm.py amorphophallus_rs --no-masks --force
 """
 
 import argparse
@@ -28,6 +32,7 @@ import collections
 import ctypes
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import threading
@@ -56,10 +61,23 @@ CRASH_SUBDIR = "crashreports"
 # Scenes whose frames live somewhere other than data/<scene>/frames
 FRAMES_OVERRIDES = {
     "stump_rs": DATA_ROOT / "360_v2" / "stump" / "images_4",
+    "amorphophallus_rs": DATA_ROOT / "amorphophallus" / "frames",
 }
 
 # Frame file types RealityScan is given
 FRAME_SUFFIXES = {".jpg", ".jpeg", ".png"}
+
+# COLMAP camera model name -> (model id, parameter count), as in COLMAP's sensor/models.h.
+# Used to write cameras.bin: the pycolmap gsplat 1.5.3 pins cannot read text files on Python 3
+CAMERA_MODELS = {
+    "SIMPLE_PINHOLE": (0, 3),
+    "PINHOLE": (1, 4),
+    "SIMPLE_RADIAL": (2, 4),
+    "RADIAL": (3, 5),
+    "OPENCV": (4, 8),
+    "OPENCV_FISHEYE": (5, 8),
+    "FULL_OPENCV": (6, 12),
+}
 
 # How many frames without a pose the check lists by name
 UNREGISTERED_SHOWN = 20
@@ -361,6 +379,67 @@ def validate_export(export_dir: Path, frames: list[Path]) -> None:
 
 
 
+def write_colmap_binary(sparse: Path) -> None:
+    """
+    Write cameras.bin, images.bin and points3D.bin next to the text files RealityScan exports.
+
+    The same model in COLMAP's binary format, the format the official datasets such as
+    stump ship. gsplat 1.5.3 reads COLMAP through the pycolmap it pins (rmbrualla), whose
+    text readers pass map() objects to numpy and fail on Python 3 ("Input quaternion
+    should be a 3- or 4-vector"). Its binary readers work, and they are used whenever the
+    .bin files exist. gsplat 1.6.0 reads either format with the official pycolmap.
+
+    Args:
+        sparse: folder with cameras.txt, images.txt and points3D.txt
+
+    Returns:
+        None. Raises RuntimeError on a camera model this function does not know
+    """
+    cameras = read_colmap_lines(sparse / "cameras.txt")
+    with open(sparse / "cameras.bin", "wb") as f:
+        f.write(struct.pack("<Q", len(cameras)))
+        for line in cameras:
+            fields = line.split()
+            if fields[1] not in CAMERA_MODELS:
+                raise RuntimeError(f"Unknown COLMAP camera model {fields[1]} in cameras.txt")
+            model_id, num_params = CAMERA_MODELS[fields[1]]
+            params = [float(v) for v in fields[4:4 + num_params]]
+            f.write(struct.pack("<iiQQ", int(fields[0]), model_id, int(fields[2]), int(fields[3])))
+            f.write(struct.pack(f"<{num_params}d", *params))
+
+    # Two lines per image: the pose, then the 2D points, which can be an empty line
+    with open(sparse / "images.txt", encoding="utf-8") as f:
+        lines = [line.rstrip("\n") for line in f if not line.startswith("#")]
+    pose_lines = lines[0::2]
+    point_lines = lines[1::2] + [""] * (len(pose_lines) - len(lines[1::2]))
+    with open(sparse / "images.bin", "wb") as f:
+        f.write(struct.pack("<Q", len(pose_lines)))
+        for pose_line, point_line in zip(pose_lines, point_lines):
+            fields = pose_line.split()
+            name = " ".join(fields[9:])
+            f.write(struct.pack("<I7dI", int(fields[0]), *[float(v) for v in fields[1:8]], int(fields[8])))
+            f.write(name.encode("utf-8") + b"\x00")
+            points = point_line.split()
+            f.write(struct.pack("<Q", len(points) // 3))
+            for i in range(0, len(points) - 2, 3):
+                f.write(struct.pack("<ddq", float(points[i]), float(points[i + 1]), int(points[i + 2])))
+
+    points3d = read_colmap_lines(sparse / "points3D.txt")
+    with open(sparse / "points3D.bin", "wb") as f:
+        f.write(struct.pack("<Q", len(points3d)))
+        for line in points3d:
+            fields = line.split()
+            track = [int(v) for v in fields[8:]]
+            f.write(struct.pack(
+                "<Q3d3BdQ", int(fields[0]), *[float(v) for v in fields[1:4]],
+                *[int(v) for v in fields[4:7]], float(fields[7]), len(track) // 2,
+            ))
+            f.write(struct.pack(f"<{len(track)}I", *track))
+
+    print(f"  binary model:      cameras.bin, images.bin, points3D.bin written to {sparse}")
+
+
+
 
 
 def main() -> int:
@@ -371,7 +450,7 @@ def main() -> int:
         process exit code, 0 on success
     """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("scene", help="folder name under data, for example amorphophallus or stump_rs")
+    parser.add_argument("scene", help="folder name under data, for example amorphophallus_rs or stump_rs")
     parser.add_argument("--rs-dir", type=Path, default=Path(os.environ.get("RS_DIR", DEFAULT_RS_DIR)), help="RealityScan install folder")
     parser.add_argument("--no-masks", action="store_true", help="align without -generateAIMasks")
     parser.add_argument("--force", action="store_true", help="delete the existing export and project and run again")
@@ -397,6 +476,7 @@ def main() -> int:
         if not args.force:
             print(f"An export already exists at {export_dir}. Checking it. Add --force to run RealityScan again")
             validate_export(export_dir, frames)
+            write_colmap_binary(export_dir / "sparse" / "0")
             print(f"  project:           {project_path if project_path.is_file() else 'not saved'}")
             return 0
         shutil.rmtree(export_dir)
@@ -415,6 +495,7 @@ def main() -> int:
     print(f"RealityScan finished in {(time.monotonic() - started) / 60:.1f} min")
 
     validate_export(export_dir, frames)
+    write_colmap_binary(export_dir / "sparse" / "0")
     if project_path.is_file():
         print(f"  project:           {project_path}")
         print("  Open it in RealityScan to see the cameras and the sparse points")

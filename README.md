@@ -92,22 +92,22 @@ run_stump.bat 160 30k
 
 ## Running Amorphophallus
 
-The input is the 360 the frontend serves, `orbit_front_centre.mp4` from the Taletoreum repo (1280x720, 240 frames). All 240 frames are in `data\amorphophallus\frames`. RealityScan finds the camera poses with the same steps as the Taletoreum pipeline, then gsplat trains with the same official command as stump.
+The input is the 360 the frontend serves, `orbit_front_centre.mp4` from the Taletoreum repo (1280x720, 240 frames). All 240 frames are in `data\amorphophallus\frames`. RealityScan finds the camera poses with the same steps as the Taletoreum pipeline, then gsplat trains with the same official command as stump. The scene is called `amorphophallus_rs` and is set up like `stump_rs`: it reads the frames where they are and writes everything into its own `data\amorphophallus_rs` folder.
 
-1. Find the camera poses. This writes `data\amorphophallus\colmap` and ends with how many frames got a pose:
+1. Find the camera poses. This writes `data\amorphophallus_rs\colmap` and ends with how many frames got a pose:
 
 ```bat
-run_sfm.bat amorphophallus
+run_sfm.bat amorphophallus_rs
 ```
 
 2. Train each version, one after the other:
 
 ```bat
-run_scene.bat 153 7k amorphophallus
+run_scene.bat 153 7k amorphophallus_rs
 ```
 
 ```bat
-run_scene.bat 160 7k amorphophallus
+run_scene.bat 160 7k amorphophallus_rs
 ```
 
 3. Compare with `python compare.py`, which lists each scene separately
@@ -116,7 +116,8 @@ run_scene.bat 160 7k amorphophallus
 ### Notes
 
 * RealityScan is looked for in `C:\Program Files\Epic Games\RealityScan`. If it is installed elsewhere, run `set "RS_DIR=<folder>"` in the same window first
-* AI masks are on, as in Taletoreum. If few frames get a pose, run again without them: `run_sfm.bat amorphophallus --no-masks --force`
+* AI masks are on, as in Taletoreum. If few frames get a pose, run again without them: `run_sfm.bat amorphophallus_rs --no-masks --force`
+* The first runs wrote into `data\amorphophallus\colmap` and `data\amorphophallus\realityscan`, where the export failed with `err:5618`. Those two folders are not used any more and can be deleted
 * The footage is AI generated and covers about 238 degrees, not a full circle. The plant faces the camera in every frame while the background turns, so expect RealityScan to align on the background and the plant to come out smeared
 * Training uses `--data_factor 1`, the frames at full size, since they are already 1280x720
 * Note the registered frame count from step 1 along with the usual time, memory and look
@@ -149,8 +150,9 @@ run_scene.bat 160 7k stump_rs
 
 ### Notes
 
+* An export made before the binary files were added is fixed by running `run_sfm.bat stump_rs` again without `--force`: it checks the existing export and writes the `.bin` files, without running RealityScan again
 * `stump_rs` trains with `--data_factor 1` because `images_4` is already a quarter size, so the image size matches the `stump` runs
-* The Amorphophallus run saves its project the same way, in `data\amorphophallus\realityscan\project.rsproj`
+* The Amorphophallus run saves its project the same way, in `data\amorphophallus_rs\realityscan\project.rsproj`
 * A hole that shows up with both COLMAP and RealityScan poses means the cameras never saw that part, not that the poses are wrong
 
 
@@ -235,4 +237,5 @@ Each variant gets its own results folder, for example `results\160\30k_mcmc_pack
 * `NVCC_APPEND_FLAGS=-DUSE_CUDA=1` while installing `examples/requirements.txt`, so fused-ssim compiles against torch 2.9.1 on Windows. Without it, torch's own `compiled_autograd.h` stops MSVC with "'std': ambiguous symbol" (pytorch/pytorch#148317)
 * 1.5.3 only: the pycolmap it pins (rmbrualla/pycolmap) reads COLMAP's 64 bit counts with the struct format `'L'`, which is 8 bytes on Linux but 4 on Windows. The setup changes those formats to `'Q'` in the installed `pycolmap\scene_manager.py`, which gives the same values as on Linux, and its check now reads the stump COLMAP files
 * If `examples/requirements.txt` fails on `nvidia-ncore`, `ppisp` or `fused-bilagrid`, that one line is skipped. None of them are used when training on a COLMAP dataset
-* Amorphophallus and `stump_rs` only: camera poses come from RealityScan, as in the Taletoreum pipeline, instead of COLMAP, which the official datasets use
+* `amorphophallus_rs` and `stump_rs` only: camera poses come from RealityScan, as in the Taletoreum pipeline, instead of COLMAP, which the official datasets use
+* `amorphophallus_rs` and `stump_rs` only: `run_sfm.bat` also writes RealityScan's text model as `cameras.bin`, `images.bin` and `points3D.bin`, the format the official datasets ship. The pycolmap 1.5.3 pins cannot read COLMAP text on Python 3 ("Input quaternion should be a 3- or 4-vector"). The values are unchanged: on Taletoreum's export, the official pycolmap and the pinned one read the same numbers from the binary files as from the text files

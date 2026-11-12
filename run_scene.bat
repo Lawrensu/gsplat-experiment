@@ -125,7 +125,7 @@ exit /b 0
 echo Usage: run_scene.bat ^<153^|160^> ^<7k^|30k^> ^<scene^> [mcmc] [packed]
 echo   153 = gsplat 1.5.3, 160 = gsplat 1.6.0
 echo   7k  = stop at 7000 steps, 30k = the full official 30000 steps
-echo   scene = stump, or a folder under data made with run_sfm.bat, for example amorphophallus
+echo   scene = stump, or a folder under data made with run_sfm.bat, for example amorphophallus_rs
 echo   mcmc = the official mcmc benchmark, at most 1 million Gaussians
 echo   packed = less GPU memory, slightly slower
 pause
