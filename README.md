@@ -77,6 +77,7 @@ run_stump.bat 160 30k
 
 * Each run trains with the official `basic.sh` stump command (`--data_factor 4 --disable_viewer --render_traj_path ellipse`), then evaluates every saved checkpoint. `7k` only adds `--max_steps 7000 --save_steps 7000`
 * Results go to `results\<version>\<7k|30k>\stump`, with metrics in `stats\`, renders in `renders\` and the splat in `ply\point_cloud_<step>.ply`
+* Every run ends with a summary: the number of Gaussians in each saved splat, read from the `.ply` itself, then PSNR, SSIM, LPIPS, training time and peak GPU memory at each saved step. To show it again for an earlier run: `python compare.py --run results\153\7k\stump`
 * If a 30k run crashes the PC, see Crashes during training for the lighter `mcmc` and `packed` runs
 * `run_stump.bat` adds the trainer's own `--save_ply` flag to the official command, which only writes the `.ply` files and leaves training unchanged. Open them in SuperSplat (https://superspl.at/editor) to check the quality
 * Runs made before `--save_ply` was added have no `.ply`. Export one from the checkpoint with gsplat's own `export_splats`, the same function the flag uses. For 1.5.3 at 7k, from this folder:
@@ -201,6 +202,16 @@ run_scene.bat 160 30k stump packed
 
 ```bat
 run_scene.bat 160 30k stump mcmc packed
+```
+
+Both options work the same on 1.5.3, which has the same flags. Until 1.6.0 builds, run them with `153`:
+
+```bat
+run_scene.bat 153 30k stump packed
+```
+
+```bat
+run_scene.bat 153 30k stump mcmc packed
 ```
 
 Each variant gets its own results folder, for example `results\160\30k_mcmc_packed\stump`, and `compare.py` lists it as its own length.

@@ -107,6 +107,9 @@ set "EVALFAIL="
 for %%C in ("%RES%\ckpts\*") do if not defined EVALFAIL call :eval_ckpt "%%~fC"
 if defined EVALFAIL set "FAILED=Evaluation" & goto fail
 
+rem ---- 3. Summary: Gaussians in each saved splat, plus quality, time and memory ----
+python "%~dp0compare.py" --run "%RES%"
+
 echo.
 echo ==== Done %DATE% %TIME% ====
 echo Stats are in %RES%\stats. Compare runs with: python compare.py
