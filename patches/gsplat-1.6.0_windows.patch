@@ -1,19 +1,37 @@
+diff --git a/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGS.h b/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGS.h
+index 7381bde..1b5f0b0 100644
+--- a/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGS.h
++++ b/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGS.h
+@@ -117,7 +117,9 @@ void launch_rasterize_to_pixels_from_world_3dgs_parallel_batch_fwd_kernel(
+     const at::Tensor batch_offsets,    // [num_tiles + 1] int32
+     const at::Tensor bid_to_slot,      // [total_batches] int32
+     const int64_t total_batches,       // scalar; equals batch_offsets[num_tiles]
+-    bool fwd_only,                     // skip exact debug/backward metadata and batch-replay
++    // gsplat Windows patch: the .cu definition says const bool. MSVC names const bool and bool differently
++    // here (Linux compilers do not), so Rasterization.cpp could not link to it on Windows.
++    const bool fwd_only,               // skip exact debug/backward metadata and batch-replay
+     // outputs
+     at::Tensor renders,                     // [..., C, image_height, image_width, channels]
+     at::Tensor alphas,                      // [..., C, image_height, image_width]
 diff --git a/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu b/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu
-index c0574f6..1c9f137 100644
+index c0574f6..aa1814c 100644
 --- a/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu
 +++ b/gsplat/cuda/csrc/RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu
-@@ -17,6 +17,10 @@
+@@ -17,6 +17,13 @@
   */
  
  #include "Config.h"
-+// gsplat Windows patch: std::bit_width replaces __builtin_clzll, which MSVC does not have
++// gsplat Windows patch: std::bit_width replaces __builtin_clzll, which MSVC does not have.
++// CUB and the caching allocator are for the radix sort below, which calls CUB directly on Windows.
 +#ifdef _MSC_VER
 +#include <bit>
++#include <c10/cuda/CUDACachingAllocator.h>
++#include <cub/cub.cuh>
 +#endif
  
  #if GSPLAT_BUILD_3DGUT
  
-@@ -187,7 +191,12 @@ namespace
+@@ -187,7 +194,12 @@ namespace
          {
              return 0;
          }
@@ -26,6 +44,37 @@ index c0574f6..1c9f137 100644
      }
  } // namespace
  
+@@ -231,6 +243,22 @@ at::Tensor compute_bid_to_slot(
+     // Sort by `(batch_round, tile)` while carrying the original tile-major
+     // slot as the value. The sorted values are the launch-index to slot
+     // permutation; no extra scatter is needed.
++    // gsplat Windows patch: torch_cuda.dll does not export at::cuda::cub::detail::radix_sort_pairs_impl
++    // (no TORCH_CUDA_CPP_API in ATen/cuda/cub.h), so the link fails on Windows. Call the same CUB sort
++    // directly, as SparseTileLayout.cu does: same keys, values, order and bit range.
++#ifdef _MSC_VER
++    CUB_WRAPPER(
++        cub::DeviceRadixSort::SortPairs,
++        sort_keys.const_data_ptr<int64_t>(),
++        sorted_keys.data_ptr<int64_t>(),
++        sort_values.const_data_ptr<int32_t>(),
++        bid_to_slot.data_ptr<int32_t>(),
++        total_batches,
++        0,
++        static_cast<int>(total_bits == 0 ? 1u : total_bits),
++        stream
++    );
++#else
+     at::cuda::cub::radix_sort_pairs<int64_t, int32_t>(
+         sort_keys.const_data_ptr<int64_t>(),
+         sorted_keys.data_ptr<int64_t>(),
+@@ -241,6 +269,7 @@ at::Tensor compute_bid_to_slot(
+         /*begin_bit=*/0,
+         /*end_bit=*/static_cast<int64_t>(total_bits == 0 ? 1u : total_bits)
+     );
++#endif
+ 
+     return bid_to_slot;
+ }
 diff --git a/gsplat/cuda/csrc/SphericalHarmonicsL1PlusCUDA.cu b/gsplat/cuda/csrc/SphericalHarmonicsL1PlusCUDA.cu
 index 50480e8..9ec2c31 100644
 --- a/gsplat/cuda/csrc/SphericalHarmonicsL1PlusCUDA.cu

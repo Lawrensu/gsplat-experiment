@@ -97,8 +97,11 @@ echo.
 echo ==== %CLONE% %SCENE% %RUN%: training, started %DATE% %TIME% ====
 rem --save_ply is the trainer's own flag: it adds ply\point_cloud_<step>.ply at steps 7000 and
 rem 30000 (and the last step) for viewing, for example in SuperSplat. Training is unchanged.
-echo python simple_trainer.py %CONFIG% --eval_steps -1 --save_ply %COMMON% %EXTRA%
-python simple_trainer.py %CONFIG% --eval_steps -1 --save_ply %COMMON% %EXTRA%
+rem guarded_train.py runs the trainer below unchanged. It caps PyTorch at 90% of GPU memory and logs the GPU
+rem to gpu_log.csv every 2 s, so a crash leaves the last readings.
+if exist "%RES%\gpu_log.csv" del "%RES%\gpu_log.csv"
+echo python "%~dp0guarded_train.py" "%RES%\gpu_log.csv" simple_trainer.py %CONFIG% --eval_steps -1 --save_ply %COMMON% %EXTRA%
+python "%~dp0guarded_train.py" "%RES%\gpu_log.csv" simple_trainer.py %CONFIG% --eval_steps -1 --save_ply %COMMON% %EXTRA%
 if errorlevel 1 set "FAILED=Training" & goto fail
 
 rem ---- 2. Evaluate and render from each checkpoint ----
@@ -119,8 +122,8 @@ exit /b 0
 :eval_ckpt
 echo.
 echo ==== %CLONE% %SCENE% %RUN%: evaluation of %~nx1 ====
-echo python simple_trainer.py %CONFIG% %COMMON% --ckpt "%~1"
-python simple_trainer.py %CONFIG% %COMMON% --ckpt "%~1"
+echo python "%~dp0guarded_train.py" "%RES%\gpu_log.csv" simple_trainer.py %CONFIG% %COMMON% --ckpt "%~1"
+python "%~dp0guarded_train.py" "%RES%\gpu_log.csv" simple_trainer.py %CONFIG% %COMMON% --ckpt "%~1"
 if errorlevel 1 set "EVALFAIL=1"
 exit /b 0
 

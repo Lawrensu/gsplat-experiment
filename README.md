@@ -184,20 +184,14 @@ python compare.py
 
 ### 30k
 
-1. Open a second Command Prompt in this folder and start the GPU log. It records memory, temperature and power every 5 seconds, so a crash leaves a record:
-
-```bat
-nvidia-smi --query-gpu=timestamp,memory.used,memory.total,temperature.gpu,power.draw,utilization.gpu --format=csv -l 5 -f gpu_log.csv
-```
-
-2. In the first window, train with MCMC:
+1. Train with MCMC:
 
 ```bat
 run_scene.bat 153 30k stump mcmc
 ```
 
-3. Stop the log with Ctrl + C when the run ends
-4. If the run finishes, train the other scenes the same way, for example `run_scene.bat 153 30k stump_rs mcmc`
+2. If the run finishes, train the other scenes the same way, for example `run_scene.bat 153 30k stump_rs mcmc`
+3. Then the default config, if you want it, for example `run_scene.bat 153 30k stump packed`
 
 
 ### Notes
@@ -205,6 +199,8 @@ run_scene.bat 153 30k stump mcmc
 * MCMC is the first choice for 30k. In gsplat's own benchmark on the Mip-NeRF 360 scenes, MCMC capped at 1 million Gaussians reaches PSNR 29.18 with 1.98 GB, against 29.00 with 5.62 GB for the default
 * The default trainer keeps adding Gaussians until step 15000, so memory peaks around the middle of a 30k run. On 1.5.3 it peaks higher because of the opacity reset bug under Findings
 * `packed` only shrinks the memory for each image, not the Gaussians. It is not needed with `mcmc`
+* Every run is capped at 90% of GPU memory and logs the GPU every 2 seconds to `gpu_log.csv` in its results folder, see Crashes during training
+* A run that needs more than the cap stops with "Stopped: the run needed more than the 90% GPU memory cap". The PC stays up. Use `mcmc` for that scene instead
 * MCMC and default are different training methods, so compare `mcmc` runs with each other
 * The first evaluation downloads the LPIPS network weights, so it needs internet
 * The first `stump` run writes `images_4_png` into the dataset, which gsplat's parser makes because stump's `images_4` files are `.JPG`
@@ -242,7 +238,12 @@ To view a splat, open https://superspl.at/editor and drag the `.ply` onto the pa
 
 ## Crashes during training
 
-A run that runs out of GPU memory stops with an error in the window, or slows to a crawl when the NVIDIA driver moves the overflow into system RAM. Neither restarts the PC. If the whole PC restarts with a blue screen, the fault is below the trainer: the graphics driver, the hardware, or Windows' hypervisor layer. These steps need no admin rights.
+`run_scene.bat` starts the official trainer through `guarded_train.py`, which changes no gsplat code but adds two guards:
+
+* PyTorch may use at most 90% of the GPU memory. A run that needs more stops with an out of memory error, instead of the NVIDIA driver moving the overflow into system RAM
+* The GPU is logged every 2 seconds to `results\<version>\<length>\<scene>\gpu_log.csv`: memory, temperature, power, load and clock. Each line is saved to disk as it is written, so a crash still leaves the last readings
+
+If the whole PC still restarts with a blue screen, the fault is below the trainer: the graphics driver, the hardware, or Windows' hypervisor layer. These steps need no admin rights.
 
 1. Read the stop code and the time of the last crashes. If it says access denied, lab IT can read it:
 
@@ -251,14 +252,14 @@ powershell -Command "Get-WinEvent -FilterHashtable @{LogName='System'; Id=1001,4
 ```
 
 2. Check how big the run was at step 7000 in `results\<version>\<length>\<scene>\stats\train_step6999_rank0.json`. `mem` is the peak GPU memory in GiB and `num_GS` the number of Gaussians
-3. Check the end of `gpu_log.csv` for memory near 12 GB, temperature, and power just before the crash
+3. Check the end of the run's `gpu_log.csv` for memory, temperature and power just before the crash
 4. Note the driver version from the top line of `nvidia-smi`
 
 
 ### Notes
 
-* If an `mcmc` run, which stays near 2 GB, also crashes, it is a lab PC problem. Give lab IT the stop codes, the times, and that each crash happened under sustained full GPU load
-* The last lines of `gpu_log.csv` before a crash can be missing
+* If a run under the memory cap, or an `mcmc` run, which stays near 2 GB, also crashes, it is a lab PC problem. Give lab IT the stop codes, the times, the GPU log, and that each crash happened under sustained full GPU load
+* The cap covers what PyTorch allocates, which includes gsplat's own GPU buffers. CUDA's own overhead, about a few hundred MB, comes on top
 
 
 
@@ -273,12 +274,16 @@ powershell -Command "Get-WinEvent -FilterHashtable @{LogName='System'; Id=1001,4
 
 ## Deviations
 
+* Training and evaluation run through `guarded_train.py`, which caps PyTorch at 90% of GPU memory and logs the GPU, then runs the official `simple_trainer.py` with the same arguments, because 30k runs restarted the lab PC
 * Portable MSVC 14.44 and the conda-forge CUDA 12.8 compiler instead of Visual Studio Build Tools and the CUDA installer, because both installers need admin rights
 * git from conda-forge, because the PC has no git
 * torch 2.9.1 cu128 from the PyTorch index first, because the Windows PyPI torch is CPU only
 * `pip install -e . --no-build-isolation` instead of `pip install -e .`, because an isolated build would compile against a different, CPU-only torch
 * 1.6.0 only: if its experimental extension fails to build, the setup retries once without it. `simple_trainer.py` does not use it
 * 1.6.0 only: `patches/gsplat-1.6.0_windows.patch` fixes three spots that only compile with Linux's C++ library, each under `#ifdef _MSC_VER` so Linux builds stay upstream: `std::isfinite` in GPU code (`Cameras.cuh`), the GCC built-in `__builtin_clzll` (`RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu`), and a zero-length `std::array` in GPU code (`SphericalHarmonicsL1PlusCUDA.cu`)
+* 1.6.0 only: the same patch fixes the two link errors in the 3DGUT rasterizer:
+  * The backward pass sorts with CUB directly instead of PyTorch's `radix_sort_pairs`, because PyTorch's Windows DLL does not export it. Same keys, values and bit range, under `#ifdef _MSC_VER`, as gsplat's own `SparseTileLayout.cu` already does
+  * The header for the parallel forward launcher says `const bool fwd_only`, matching its `.cu` definition. MSVC gives `bool` and `const bool` different link names in this spot, Linux compilers do not, so this changes nothing on Linux
 * The conda CUDA headers in `Library\include\targets\x64` are added to `INCLUDE`, because `cl` does not see the folder `nvcc` uses
 * `NVCC_APPEND_FLAGS=-DUSE_CUDA=1` while installing `examples/requirements.txt`, so fused-ssim compiles against torch 2.9.1 on Windows. Without it, torch's own `compiled_autograd.h` stops MSVC with "'std': ambiguous symbol" (pytorch/pytorch#148317)
 * 1.5.3 only: the pycolmap it pins (rmbrualla/pycolmap) reads COLMAP's 64 bit counts with the struct format `'L'`, which is 8 bytes on Linux but 4 on Windows. The setup changes those formats to `'Q'` in the installed `pycolmap\scene_manager.py`, which gives the same values as on Linux, and its check now reads the stump COLMAP files
