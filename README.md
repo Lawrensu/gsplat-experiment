@@ -8,7 +8,7 @@ This document covers:
 * Setting up the lab PC
 * The scenes and the commands
 * Camera poses with RealityScan
-* Training at 7k and 30k steps
+* Training at 7k, 30k or any other number of steps
 * Reviewing the results
 * What to do when the PC crashes during training
 * Findings so far
@@ -113,19 +113,21 @@ The scenes:
 The commands:
 
 * `run_sfm.bat <scene> [--no-masks] [--force]`: RealityScan camera poses for `stump_rs` or `amorphophallus_rs`
-* `run_scene.bat <153|160> <7k|30k> <scene> [mcmc] [packed]`: trains, evaluates every saved checkpoint, then prints a summary of the run
+* `run_scene.bat <153|160> <length> <scene> [mcmc] [packed]`: trains, evaluates every saved checkpoint, then prints a summary of the run
 * `python compare.py`: every run in one table, with the differences between versions
 * `python compare.py --run results\<version>\<length>\<scene>`: the summary of one run again
 
 
 ### Notes
 
-* `7k` adds `--max_steps 7000 --save_steps 7000` to the official command. `30k` is the official command as is, with checkpoints at 7000 and 30000 steps
+* `30k` is the official command as is, with checkpoints at 7000 and 30000 steps
+* Any other number of thousands, such as `7k` or `10k`, adds `--max_steps` and `--save_steps` at that step to the official command, for example `--max_steps 10000 --save_steps 10000`. The splat is also saved at 7000 when the run gets that far
+* The default config keeps adding Gaussians until step 15000 and its learning rate falls over the length of the run, so a run shorter than 15k ends while still adding Gaussians
 * `mcmc` trains with the official MCMC benchmark (`mcmc.sh`) instead of the default one: the `mcmc` config and `--strategy.cap-max 1000000`, so there are never more than 1 million Gaussians
 * `packed` adds the trainer's own `--packed` flag: less GPU memory for each image, slightly slower
 * `mcmc` and `packed` can be combined, in any order, and work the same on both versions
-* Results go to `results\<version>\<length>\<scene>`, where length is `7k` or `30k` plus `_mcmc` and `_packed` when used, for example `results\153\30k_mcmc\stump`
-* `run_stump.bat <153|160> <7k|30k> [mcmc] [packed]` is the same as `run_scene.bat` with `stump`
+* Results go to `results\<version>\<length>\<scene>`, where length is `7k`, `10k`, `30k` and so on, plus `_mcmc` and `_packed` when used, for example `results\153\30k_mcmc\stump`
+* `run_stump.bat <153|160> <length> [mcmc] [packed]` is the same as `run_scene.bat` with `stump`
 
 
 

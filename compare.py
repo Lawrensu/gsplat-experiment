@@ -9,7 +9,7 @@ Usage:
 run_scene.bat calls it at the end of every run.
 
 Reads results/<version>/<length>/<scene>/stats/*.json, where <version> is 153 (gsplat 1.5.3)
-or 160 (gsplat 1.6.0), <length> is 7k or 30k with an optional _mcmc and _packed suffix,
+or 160 (gsplat 1.6.0), <length> is 7k, 10k, 30k and so on with an optional _mcmc and _packed suffix,
 and <scene> is stump, amorphophallus_rs and so on. Versions are only compared within the same
 scene and length. simple_trainer.py writes two kinds of files:
 

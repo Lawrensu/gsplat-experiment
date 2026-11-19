@@ -4,18 +4,19 @@ cd /d "%~dp0"
 
 rem Runs the official gsplat benchmark command (examples/benchmarks/basic.sh) for one scene:
 rem one training run, then one evaluation run per saved checkpoint.
-rem Usage: run_scene.bat <153|160> <7k|30k> <scene> [mcmc] [packed]
+rem Usage: run_scene.bat <153|160> <length> <scene> [mcmc] [packed]
 rem   153     gsplat 1.5.3, clone gsplat-1.5.3, conda env gsplat153
 rem   160     gsplat 1.6.0, clone gsplat-1.6.0, conda env gsplat160
-rem   7k      adds --max_steps 7000 --save_steps 7000 to the training run (checkpoint at step 7000)
 rem   30k     plain defaults (checkpoints at steps 7000 and 30000, both get evaluated)
+rem   Nk      any other number of thousands, for example 7k or 10k: adds --max_steps N000
+rem           --save_steps N000 to the training run (one checkpoint, at the last step)
 rem   stump   data\360_v2\stump with --data_factor 4, as in basic.sh
 rem   other   data\<scene>\colmap from run_sfm.bat, with --data_factor 1 (the frames are used at full size).
 rem           stump_rs is stump's images_4 with RealityScan poses, so factor 1 there matches factor 4 above
 rem   mcmc    the official mcmc benchmark instead (examples/benchmarks/mcmc.sh): the mcmc config with
 rem           --strategy.cap-max 1000000, so the number of Gaussians, and with it the memory, has a ceiling
 rem   packed  the trainer's own --packed flag: less GPU memory, slightly slower. Works with either config
-rem Results go to results\<153|160>\<7k|30k>[_mcmc][_packed]\<scene>, the splat in its ply folder. Run one at a time.
+rem Results go to results\<153|160>\<length>[_mcmc][_packed]\<scene>, the splat in its ply folder. Run one at a time.
 
 rem Gaussian ceiling for mcmc, the CAP_MAX value in the official mcmc.sh
 set "CAP_MAX=1000000"
@@ -51,10 +52,14 @@ if "%VER%"=="153" set "CLONE=gsplat-1.5.3"
 if "%VER%"=="160" set "CLONE=gsplat-1.6.0"
 if not defined CLONE goto usage
 set "EXTRA="
-if /i "%LEN%"=="7k" set "EXTRA=--max_steps 7000 --save_steps 7000"
-if /i "%LEN%"=="7k" goto len_ok
 if /i "%LEN%"=="30k" goto len_ok
-goto usage
+rem Any other length is a number of thousands with k, for example 7k or 10k. The run stops
+rem there and saves its checkpoint there, as the official 7k benchmark run does
+if /i not "%LEN:~-1%"=="k" goto usage
+set "KSTEPS=%LEN:~0,-1%"
+echo %KSTEPS%| findstr /r "^[1-9][0-9]*$" >nul || goto usage
+set /a STEPS=KSTEPS*1000
+set "EXTRA=--max_steps %STEPS% --save_steps %STEPS%"
 :len_ok
 
 if /i "%SCENE%"=="stump" (
@@ -128,9 +133,10 @@ if errorlevel 1 set "EVALFAIL=1"
 exit /b 0
 
 :usage
-echo Usage: run_scene.bat ^<153^|160^> ^<7k^|30k^> ^<scene^> [mcmc] [packed]
+echo Usage: run_scene.bat ^<153^|160^> ^<length^> ^<scene^> [mcmc] [packed]
 echo   153 = gsplat 1.5.3, 160 = gsplat 1.6.0
-echo   7k  = stop at 7000 steps, 30k = the full official 30000 steps
+echo   length = 30k for the full official 30000 steps, or another number of thousands
+echo            to stop there, for example 7k or 10k
 echo   scene = stump, or a folder under data made with run_sfm.bat, for example amorphophallus_rs
 echo   mcmc = the official mcmc benchmark, at most 1 million Gaussians
 echo   packed = less GPU memory, slightly slower
