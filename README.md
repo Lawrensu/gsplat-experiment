@@ -9,6 +9,7 @@ This document covers:
 * The scenes and the commands
 * Camera poses with RealityScan
 * Training at 7k, 30k or any other number of steps
+* Training on Google Colab instead of the lab PC
 * Reviewing the results
 * What to do when the PC crashes during training
 * Findings so far
@@ -73,6 +74,27 @@ run_scene.bat 153 30k stump mcmc
 ```
 
 6. Open the splats in SuperSplat (see Reviewing results)
+
+
+
+## Training on Google Colab
+
+`colab/gsplat_colab.ipynb` runs the same training and evaluation on a Colab T4 (about 15 GB of GPU memory), so long runs no longer load the lab PC. It is opened in VS Code with the official Google Colab extension.
+
+1. Open `colab/gsplat_colab.ipynb` in VS Code
+2. Select Kernel, Colab, New Colab Server, and pick a T4 GPU runtime
+3. Edit the Settings cell: `VERSION`, `LENGTH`, `SCENE`, `MCMC`, `PACKED`, the same choices as `run_scene.bat`
+4. Run the cells from top to bottom
+
+
+### Notes
+
+* The notebook clones this repo from GitHub, so it trains on what is pushed, including the stump scene. Push changes first
+* One gsplat version per session, each in its own virtual environment. 1.5.3 installs gsplat's official prebuilt wheel (torch 2.4.1, CUDA 12.4, Python 3.10), so nothing compiles. 1.6.0 has no wheel and is built from the pinned commit with torch 2.9.1, which takes a long time on Colab's 2 CPU cores
+* Unlike the lab PC, the two versions run on different torch versions on Colab, because each follows its own official install there. Compare Colab runs with Colab runs
+* The RealityScan scenes come from the lab PC: right click `data\<scene>` in the VS Code Explorer and choose Upload to Colab
+* The runtime disk is wiped when the session ends. Mount Google Drive first (command palette, "Colab: Mount Google Drive to Server...") or copy the `ply` and `stats` folders off before disconnecting
+* Training still goes through `guarded_train.py`, so the memory cap and the GPU log apply on Colab too
 
 
 
