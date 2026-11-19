@@ -279,7 +279,7 @@ powershell -Command "Get-WinEvent -FilterHashtable @{LogName='System'; Id=1001,4
 * git from conda-forge, because the PC has no git
 * torch 2.9.1 cu128 from the PyTorch index first, because the Windows PyPI torch is CPU only
 * `pip install -e . --no-build-isolation` instead of `pip install -e .`, because an isolated build would compile against a different, CPU-only torch
-* 1.6.0 only: if its experimental extension fails to build, the setup retries once without it. `simple_trainer.py` does not use it
+* 1.6.0 only: built with gsplat's own `BUILD_EXPERIMENTAL=0`, which leaves out its second, experimental extension. That extension does not compile on Windows, because it uses `uint`, a type name only Linux has, and `simple_trainer.py` does not use it
 * 1.6.0 only: `patches/gsplat-1.6.0_windows.patch` fixes three spots that only compile with Linux's C++ library, each under `#ifdef _MSC_VER` so Linux builds stay upstream: `std::isfinite` in GPU code (`Cameras.cuh`), the GCC built-in `__builtin_clzll` (`RasterizeToPixelsFromWorld3DGSParallelBatchBwd.cu`), and a zero-length `std::array` in GPU code (`SphericalHarmonicsL1PlusCUDA.cu`)
 * 1.6.0 only: the same patch fixes the two link errors in the 3DGUT rasterizer:
   * The backward pass sorts with CUB directly instead of PyTorch's `radix_sort_pairs`, because PyTorch's Windows DLL does not export it. Same keys, values and bit range, under `#ifdef _MSC_VER`, as gsplat's own `SparseTileLayout.cu` already does

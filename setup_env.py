@@ -37,7 +37,9 @@ GSPLAT_URL = "https://github.com/nerfstudio-project/gsplat.git"
 
 # key: what the user types after setup.bat. numpy: the pin the version's own
 # examples/requirements.txt uses, so the build dependencies do not fight it.
-# experimental: setup.py builds a second extension (gsplat.experimental) by default.
+# experimental: setup.py builds a second extension (gsplat.experimental) by default. It does
+# not compile on Windows (it uses the Linux type uint) and simple_trainer.py does not use it,
+# so it is switched off with gsplat's own BUILD_EXPERIMENTAL=0.
 VERSIONS = {
     "153": {
         "label": "1.5.3",
@@ -704,19 +706,14 @@ def build_gsplat(v, repo):
     # without torch. 1.6.0 lists "torch>=2.7" as a build requirement, and an isolated env would
     # download a different torch (the Windows PyPI wheel is CPU only) instead of our cu128 one.
     args = ["install", "-e", ".", "--no-build-isolation", "-v"]
-    rc, text = pip_capture(*args, cwd=repo, env=dict(os.environ))
+    env = dict(os.environ)
+    if v["experimental"]:
+        env["BUILD_EXPERIMENTAL"] = "0"
+        print("  SKIPPED (does not compile on Windows, not used by simple_trainer):"
+              " gsplat.experimental.render.kernels.csrc, via BUILD_EXPERIMENTAL=0")
+    rc, text = pip_capture(*args, cwd=repo, env=env)
     if rc != 0:
         log = save_failure_log(f"{repo.name}_build", text)
-    if rc != 0 and v["experimental"] and "experimental" in text.lower():
-        print()
-        print("  The build failed inside gsplat/experimental. 1.6.0 builds that second extension")
-        print("  by default (BUILD_EXPERIMENTAL=1), but simple_trainer.py does not use it.")
-        print("  SKIPPED (not used by simple_trainer on COLMAP): gsplat.experimental.render.kernels.csrc")
-        print("  Retrying with BUILD_EXPERIMENTAL=0.")
-        rc, text = pip_capture(*args, cwd=repo, env=dict(os.environ, BUILD_EXPERIMENTAL="0"))
-        if rc != 0:
-            log = save_failure_log(f"{repo.name}_build_no_experimental", text)
-    if rc != 0:
         fail(f"pip install -e . failed. Send the error lines above, or the whole file {log}")
     if not kernels_built(repo):
         fail("gsplat was installed but no compiled gsplat/csrc module was found in the clone")
